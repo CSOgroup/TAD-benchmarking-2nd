@@ -1,0 +1,7 @@
+*
+!.gitignore
+!TADs.tsv
+!HistoneSignals/
+!HistoneSignals/**
+!ProteinPeaks/
+!ProteinPeaks/**
