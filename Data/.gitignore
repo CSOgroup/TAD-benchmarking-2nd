@@ -5,3 +5,5 @@
 !HistoneSignals/**
 !ProteinPeaks/
 !ProteinPeaks/**
+!ctcf_data/
+!ctcf_data/**

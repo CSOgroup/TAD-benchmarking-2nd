@@ -94,9 +94,9 @@ calculate_log_ratio_histone <- function(gr_tads, gr_h_binned) {
 }
 
 
-analyze_histone_modification_single_tool <- function(tb_tads, gr_h27 = NULL, gr_h36 = NULL,
-                                                     share = 0.1, fdr_thresh = 0.1,
-                                                     nshuf = 10, chr_sel = "chr6") {
+analyze_histone_modification_single_tool_genome <- function(tb_tads, gr_h27 = NULL, gr_h36 = NULL,
+                                                            share = 0.1, fdr_thresh = 0.1,
+                                                            nshuf = 10, chr_sel = "chr6") {
   gr_tads <- tb_tads %>%
     GenomicRanges::makeGRangesFromDataFrame()
   binsize <- round(mean(GenomicRanges::width(gr_tads) - 1) * share)
@@ -108,43 +108,63 @@ analyze_histone_modification_single_tool <- function(tb_tads, gr_h27 = NULL, gr_
   ) %>%
     unlist()
   median_shuf_lr <- median(distr_shuf_lr)
+  distr_shuf_lr_len <- length(distr_shuf_lr)
   pval <- vector(length = length(avg_lr))
   for (i in seq_along(avg_lr)) {
     query <- avg_lr[i]
     if (query >= median_shuf_lr) {
-      pval[i] <- sum(distr_shuf_lr >= query) / length(distr_shuf_lr)
+      pval[i] <- sum(distr_shuf_lr >= query) / distr_shuf_lr_len
     } else {
-      pval[i] <- sum(distr_shuf_lr <= query) / length(distr_shuf_lr)
+      pval[i] <- sum(distr_shuf_lr <= query) / distr_shuf_lr_len
     }
   }
   qval_BH <- p.adjust(pval, method = "BH")
   # qval_Bonferroni <- p.adjust(pval, method = "bonferroni")
-  shareTadsSignif_lr_BH <- sum(qval_BH < fdr_thresh) / nrow(tb_tads)
+  shareTadsSignif_lr_BH_sum <- sum(qval_BH < fdr_thresh)
+  tads_n <- nrow(tb_tads)
 
-  meta.tool <- unique(tb_tads$meta.tool)
-  meta.resol <- unique(tb_tads$meta.resol)
-  res <- tibble::tibble(
-    meta.tool = meta.tool,
-    meta.resol = meta.resol,
-    shareTadsSignif_lr_BH = shareTadsSignif_lr_BH
-  )
+  tb_tads %>%
+    dplyr::select(meta.tool, meta.resol, meta.sub, chr) %>%
+    dplyr::distinct() %>%
+    dplyr::mutate(shareTadsSignif_lr_BH_sum = shareTadsSignif_lr_BH_sum, tads_n = tads_n)
+}
+
+
+analyze_histone_modification_all_tools_genome <- function(tb_tads, gr_h27 = NULL, gr_h36 = NULL,
+                                                          share = 0.1, fdr_thresh = 0.1,
+                                                          nshuf = 10, chr_sel = "chr6") {
+  input_list <- tb_tads %>%
+    dplyr::mutate(grp = paste(meta.tool, meta.resol, meta.sub, chr, sep = "||")) %>%
+    split(.$grp)
+
+  res <- input_list %>%
+    lapply(
+      analyze_histone_modification_single_tool_genome, gr_h27 = gr_h27, gr_h36 = gr_h36,
+      share = share, fdr_thresh = fdr_thresh, nshuf = nshuf,
+      chr_sel = chr_sel) %>%
+    dplyr::bind_rows()
 
   res
 }
 
+analyze_histone_modification_all_tools <- function(tb_tads, chip_folder = "Data") {
+  # chr_sels <- paste0("chr", c(1:22, "X"))
+  chr_sels <- unique(tb_tads$chr)
+  res_list <- vector("list", length = length(chr_sels))
+  names(res_list) <- chr_sels
+  for (chr_sel in chr_sels) {
+    gr_h27 <- gr_protein_gain("H3K27me3", chr_sel = chr_sel, chip_folder = chip_folder)
+    gr_h36 <- gr_protein_gain("H3K36me3", chr_sel = chr_sel, chip_folder = chip_folder)
+    res_list[[chr_sel]] <- tb_tads %>%
+      dplyr::filter(chr %in% chr_sel) %>%
+      analyze_histone_modification_all_tools_genome(gr_h27 = gr_h27, gr_h36 = gr_h36,
+                                                    share = 0.1, fdr_thresh = 0.1,
+                                                    nshuf = 10, chr_sel = chr_sel)
+  }
 
-analyze_histone_modification_all_tools <- function(tb_tads, gr_h27 = NULL, gr_h36 = NULL,
-                                                   share = 0.1, fdr_thresh = 0.1,
-                                                   nshuf = 10, chr_sel = "chr6") {
-  input_list <- tb_tads %>%
-    split(~meta.tool + meta.resol) %>%
-    purrr::discard(~NROW(.) == 0)
-
-  res <- input_list %>%
-    lapply(analyze_histone_modification_single_tool, gr_h27 = gr_h27, gr_h36 = gr_h36,
-           share = share, fdr_thresh = fdr_thresh, nshuf = nshuf,
-           chr_sel = chr_sel) %>%
-    dplyr::bind_rows()
-
-  res
+  dplyr::bind_rows(res_list) %>%
+    dplyr::group_by(meta.tool, meta.resol, meta.sub) %>%
+    dplyr::summarise(shareTadsSignif_lr_BH_sum = sum(shareTadsSignif_lr_BH_sum), tads_n = sum(tads_n), .groups = "drop") %>%
+    dplyr::mutate(shareTadsSignif_lr_BH = shareTadsSignif_lr_BH_sum / tads_n) %>%
+    dplyr::select(-shareTadsSignif_lr_BH_sum, -tads_n)
 }

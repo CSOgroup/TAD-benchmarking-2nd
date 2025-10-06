@@ -23,6 +23,7 @@ gr_protein_gain <- function(protein, chr_sel = "chr6", chip_folder = "Data") {
         col_names = c("chr", "start", "end", "vlaue"),
         show_col_types = FALSE, comment = "#"
       ) %>%
+      tidyr::drop_na() %>% 
       GenomicRanges::GRanges()
   }
   return(res)
