@@ -45,7 +45,7 @@ calculate_CTCF_orientation_at_boundary <- function(df_diffresol_one, gr_ctcf, ch
   names(seqs) <- paste(GenomicRanges::start(gr_tads_ctcf), GenomicRanges::end(gr_tads_ctcf), sep = "_")
 
   hits_list <- lapply(seq_along(seqs), function(i) {
-    TFBSTools::searchSeq(pwm, seqs[[i]], seqname = names(seqs)[i], min.score = "85%") %>%
+    TFBSTools::searchSeq(pwm, seqs[[i]], seqname = names(seqs)[i]) %>%
       as("GRanges") %>%
       tibble::as_tibble()
   }) %>%
@@ -104,9 +104,12 @@ analyze_ctcf_orientation_all_tools <- function(tb_all, chip_folder = "Data") {
   }
 
   tb_ctcf <- dplyr::bind_rows(res_list) %>%
+    dplyr::filter(relScore >= 0.85) %>%
+    dplyr::filter(!is.na(strand)) %>%
     dplyr::select(chr, tad_boundary, strand) %>%
     dplyr::group_by(chr, tad_boundary) %>%
-    dplyr::summarise(strand = paste(sort(unique(strand)), collapse = ","), .groups = "drop")
+    dplyr::summarise(strand = paste(sort(unique(strand)), collapse = ","), .groups = "drop") %>%
+    dplyr::filter(!stringr::str_detect(strand, ","))
   ctcf_start <- rename_non_key(tb_ctcf, c("chr", "tad_boundary"), "start_")
   ctcf_end <- rename_non_key(tb_ctcf, c("chr", "tad_boundary"), "end_")
 
